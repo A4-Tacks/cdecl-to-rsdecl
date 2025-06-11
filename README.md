@@ -12,7 +12,7 @@ Convert some C declaration into Rust style declaration
 
 # Examples
 
-```
+```c
 $ cargo run --
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.54s
      Running `target/debug/cdecl-to-rsdecl`
@@ -28,7 +28,7 @@ c: [struct foo; 3]
 d: *fn() -> struct foo
 ```
 
-```
+```c
 $ cargo run -- -c
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.21s
      Running `target/debug/cdecl-to-rsdecl -c`
