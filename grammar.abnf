@@ -1,0 +1,57 @@
+;; abnf like grammar declaration, use peg.jq quicktest
+
+cdecl       = _ c-declare-or-cast _ [";" _ [cdecl]]
+
+c-declare-or-cast
+            = "(" _ c-param _ ")" [_ ident]
+            / c-declare
+
+; 因为没有符号信息二义有些严重, 利用空白符断言一下常见的例如 size_t f(size_t)
+c-declare   = share !"(" _ c-declare
+            / c-body *(_","_ c-body)
+c-body      = c-ptr c-body
+            / c-atom *c-suffix
+c-atom      = "(" _ c-body _ ")"
+            / ident
+
+c-param     = share *(_ share) [_ c-pbody]
+
+c-pbody     = c-ptr [c-pbody]
+            / c-patom
+c-patom     = "(" _ c-pbody _ ")" *c-suffix
+            / 1*c-suffix
+
+c-suffix    = _ (c-func / c-array)
+c-func      = "(" _ [c-param *(_","_ c-param) _] ")"
+c-array     = "[" _ [literal _] "]"
+c-ptr       = "*" _ attrs
+
+;; ------------------------------------------------
+
+rsdecl      = _ ident _ ":" _ rs-type _ [";" [rsdecl]]
+rs-type     = rs-ptr
+            / rs-array
+            / rs-func
+            / "(" _ rs-type _ ")"
+            / share *(_ share)
+
+rs-ptr      = *(attr _) "*" _ rs-type
+rs-array    = "[" _ rs-type _ [";" _ literal _] "]"
+rs-func     = "fn" _ "(" _ [rs-param _ *(","_ rs-param _) ["," _]] ")" [_ "->" _ rs-type]
+rs-param    = [ident _":"_] rs-type
+
+;; ------------------------------------------------
+
+attr    = "const" / "volatile" / "restrict"
+attrs   = *(attr _)
+ident   = <[a-zA-Z_][a-zA-Z0-9_]*>
+number  = <(0[xX][0-9a-fA-F]+|0[bB][01]+|\d+)[uUlL]*>
+literal = number / ident
+_       = <[ \t\n]*>
+__      = <[ \t\n]+>
+tt      = "{" *tt "}"
+        / "(" *tt ")"
+        / "[" *tt "]"
+        / <[^{}()\[\]]> _
+adt     = ("struct" / "union" / "enum") [__ ident] [_ &"{" tt]
+share   = adt / ident

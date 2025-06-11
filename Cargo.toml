@@ -1,0 +1,23 @@
+[package]
+name = "cdecl-to-rsdecl"
+version = "0.1.0"
+edition = "2021"
+
+authors = ["A4-Tacks <wdsjxhno1001@163.com>"]
+keywords = ["cdecl", "c", "declare"]
+description = "Convert some C declaration into Rust style declaration"
+
+license = "MIT"
+repository = "https://github.com/A4-Tacks/closure-it-rs"
+readme = "README.md"
+
+[features]
+trace = ["peg/trace"]
+
+[dependencies]
+atty = "0.2.14"
+char-classes = "0.2.5"
+either = "1.15.0"
+getopts-macro = "0.1.4"
+linefeed = "0.6.0"
+peg = "0.8.5"
