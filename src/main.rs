@@ -70,7 +70,8 @@ impl Display for CDecl {
             let first_output = first.output_c();
             if !self.share.is_empty()
             && !first_output.is_empty()
-            && !first_output.starts_with(['*', '['])
+            && !first_output.starts_with('[')
+            && !first_output.ends_with('*')
             {
                 f.write_str(" ")?;
             }
@@ -144,15 +145,15 @@ impl<T> DeclTree<T> {
         matches!(self, Self::Function { .. })
     }
 
-    fn set_term(&mut self, term: String) {
+    fn term_mut(&mut self) -> &mut String {
         match self {
             DeclTree::Pointer { sub, .. }
             | DeclTree::Function { sub, .. }
             | DeclTree::Array { sub, .. } =>
             {
-                sub.set_term(term);
+                sub.term_mut()
             }
-            DeclTree::Term(target) => *target = term,
+            DeclTree::Term(target) => target,
         }
     }
 }
@@ -370,7 +371,7 @@ peg::parser!(grammar parser() for str {
             let mut p = p;
             assert_eq!(p.declarations.len(), 1);
             if let Some(name) = name {
-                p.declarations[0].set_term(name);
+                *p.declarations[0].term_mut() = name;
             }
             p
         }
@@ -491,7 +492,8 @@ fn main() {
 
         while let lf::ReadResult::Input(line) = lf.read_line().unwrap() {
             if ["exit", "quit"].contains(&line.trim()
-                .trim_end_matches(['(', ')', ';', '`']))
+                .trim_end_matches(['(', ')', ';'])
+                .trim_matches('`'))
             {
                 break;
             }
