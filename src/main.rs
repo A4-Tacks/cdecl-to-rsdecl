@@ -521,7 +521,7 @@ fn process(matches: &Matches, s: &str) {
             .map(RsDecl::into_cdecl)
             .for_each(|cdecl|
         {
-            println!("{cdecl}");
+            println!("{cdecl};");
         });
     } else {
         let cdecls = parse_c(s);
@@ -530,7 +530,7 @@ fn process(matches: &Matches, s: &str) {
             .for_each(|mut rsdecl|
         {
             owned_processor(matches, slice::from_mut(&mut rsdecl));
-            println!("{rsdecl}");
+            println!("{rsdecl};");
         });
     }
 }
