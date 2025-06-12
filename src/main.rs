@@ -274,7 +274,13 @@ impl DeclTree<CDecl> {
                 if attr.is_empty() {
                     format!("{}{}", color!(1, "*"), sub.output_c())
                 } else {
-                    format!("{} {}", color!(1, format_args!("*{attr}")), sub.output_c())
+                    let output = sub.output_c();
+                    let attr = color!(1, format_args!("*{attr}"));
+                    if output.is_empty() {
+                        attr
+                    } else {
+                        format!("{} {}", attr, output)
+                    }
                 }
             },
             DeclTree::Function { sub, params } => {
