@@ -215,7 +215,11 @@ impl DeclTree<RsDecl> {
             },
             DeclTree::Array { sub, len } => {
                 if let Some(len) = len {
-                    format!("[{}; {}]", sub.output_rs(), color!(1;34, len))
+                    format!(
+                        "[{}{}]",
+                        sub.output_rs(),
+                        color!(1;34, format_args!("; {len}")),
+                    )
                 } else {
                     format!("[{}]", sub.output_rs())
                 }
