@@ -42,16 +42,17 @@ rs-param    = [ident _":"_] rs-type
 
 ;; ------------------------------------------------
 
-attr    = "const" / "volatile" / "restrict" / "_Atomic"
+attr    = ("const" / "volatile" / "restrict" / "_Atomic") ib
 attrs   = *(attr _)
-ident   = <[a-zA-Z_][a-zA-Z0-9_]*>
-number  = <(0[xX][0-9a-fA-F]+|0[bB][01]+|\d+)[uUlL]*>
+ident   = <[a-zA-Z_][a-zA-Z0-9_]*> ib
+number  = <(0[xX][0-9a-fA-F]+|0[bB][01]+|\d+)[uUlL]*> ib
 literal = number / ident
 _       = <[ \t\n]*>
 __      = <[ \t\n]+>
+ib      = !<[a-zA-Z0-9_]>
 tt      = "{" *tt "}"
         / "(" *tt ")"
         / "[" *tt "]"
         / <[^{}()\[\]]> _
-adt     = ("struct" / "union" / "enum") [__ ident] [_ &"{" tt]
+adt     = ("struct" / "union" / "enum") ib _ (&"{" tt / ident [_ &"{" tt])
 share   = adt / ident

@@ -347,25 +347,26 @@ const KWDS: &[&str] = &[
 
 peg::parser!(grammar parser() for str {
     rule ident() -> String
-        = s:$(#{any!("a-zA-Z_")} #{any!("a-zA-Z0-9_")}*)
+        = s:$(#{any!("a-zA-Z_")} #{any!("a-zA-Z0-9_")}*) ib()
         { s.into() }
         / expected!("ident")
     rule nident() -> String
         = i:ident() #{is(!KWDS.contains(&&*i))} {i}
         / expected!("ident")
     rule number()
-        = quiet!{"0x" / "0X"} #{any!("0-9a-fA-F")}+ num_suf()
-        / quiet!{"0b" / "0B"} #{any!("01")}+ num_suf()
-        / #{any!("0-9")}+ num_suf()
+        = quiet!{"0x" / "0X"} #{any!("0-9a-fA-F")}+ num_suf() ib()
+        / quiet!{"0b" / "0B"} #{any!("01")}+ num_suf() ib()
+        / #{any!("0-9")}+ num_suf() ib()
         / expected!("number")
     rule literal() -> String
         = s:$(number()) { s.into() }
         / ident()
-    rule attr() = "const" / "volatile" / "restrict" / "_Atomic"
+    rule attr() = ("const" / "volatile" / "restrict" / "_Atomic") ib()
     rule attrs() -> String = s:(s:$(attr()++_) _ {s})? {s.unwrap_or_default().into()}
     rule num_suf() = #{any!("uUlL")}*
     rule _() = #{any!(" \t\r\n")}*
     rule __() = #{any!(" \t\r\n")}+
+    rule ib() = !#{any!("a-zA-Z0-9_")}
 
     rule tt()
         = "{" tt()* "}"
@@ -373,7 +374,7 @@ peg::parser!(grammar parser() for str {
         / "[" tt()* "]"
         / #{any!(^"{}()[]")} _
 
-    rule adt() = ("struct" / "union" / "enum") (__ ident())? (_ &"{" tt())?
+    rule adt() = ("struct" / "union" / "enum") ib() _ (&"{" tt() / ident() (_ &"{" tt())?)
     rule share() -> String
         = s:$(adt()) {s.into()}
         / ident()
