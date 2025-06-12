@@ -5,6 +5,8 @@ use std::{
     mem::take,
     process::exit,
     slice,
+    str::FromStr,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use atty::Stream;
@@ -40,6 +42,40 @@ fn paren(paren: bool, s: &impl Display) -> String {
 }
 
 const PROG_NAME: &str = env!("CARGO_BIN_NAME");
+static COLOR: AtomicBool = AtomicBool::new(false);
+
+macro_rules! color {
+    ($color:literal $(; $color1:literal)*, $e:expr) => {{
+        if COLOR.load(Ordering::Acquire) {
+            format!(
+                "\x1b[{}m{}\x1b[m",
+                concat!(stringify!($color)$(, ";", stringify!($color1))*),
+                $e,
+            )
+        } else {
+            format!("{}", $e)
+        }
+    }};
+}
+
+enum ColorMode {
+    Always,
+    Auto,
+    Never,
+}
+
+impl FromStr for ColorMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "always" | "yes" | "force" => Self::Always,
+            "never" | "no" | "none" => Self::Never,
+            "auto" | "tty" | "if-tty" => Self::Auto,
+            _ => Err(format!("invalid color mode: {s:?}"))?,
+        })
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 struct CDecl {
@@ -162,24 +198,24 @@ impl DeclTree<RsDecl> {
     fn output_rs(&self) -> String {
         match self {
             DeclTree::Pointer { attr, sub } => {
-                format!("{attr}*{}", sub.output_rs())
+                format!("{}{}", color!(1, format_args!("{attr}*")), sub.output_rs())
             },
             DeclTree::Function { sub, params } => {
                 let mut ret = sub.output_rs();
                 if ret == "void" {
                     ret = String::new()
                 } else if !ret.is_empty() {
-                    ret = format!(" -> {ret}")
+                    ret = format!("{}{ret}", color!(1;32, " -> "))
                 }
                 let params = params.iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
-                    .join(", ");
-                format!("fn({params}){ret}")
+                    .join(&color!(1;35, ", "));
+                format!("{}({params}){ret}", color!(33, "fn"))
             },
             DeclTree::Array { sub, len } => {
                 if let Some(len) = len {
-                    format!("[{}; {len}]", sub.output_rs())
+                    format!("[{}; {}]", sub.output_rs(), color!(1;34, len))
                 } else {
                     format!("[{}]", sub.output_rs())
                 }
@@ -236,22 +272,22 @@ impl DeclTree<CDecl> {
         match self {
             DeclTree::Pointer { attr, sub } => {
                 if attr.is_empty() {
-                    format!("*{}", sub.output_c())
+                    format!("{}{}", color!(1, "*"), sub.output_c())
                 } else {
-                    format!("*{attr} {}", sub.output_c())
+                    format!("{} {}", color!(1, format_args!("*{attr}")), sub.output_c())
                 }
             },
             DeclTree::Function { sub, params } => {
                 let params = params.iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
-                    .join(", ");
+                    .join(&color!(1;35, ", "));
                 format!("{}({})", paren(sub.is_pointer(), &sub.output_c()), params)
             },
             DeclTree::Array { sub, len } => {
                 let sub = paren(sub.is_pointer(), &sub.output_c());
                 if let Some(len) = len {
-                    format!("{sub}[{len}]")
+                    format!("{sub}[{}]", color!(1;34, len))
                 } else {
                     format!("{sub}[]")
                 }
@@ -447,6 +483,7 @@ fn main() {
     let options = getopts_macro::getopts_options! {
         -c                  "parse rust, into c";
         -o, --owned         "c owned rule, e.g `int f(int())` -> `int f(int (*)())`";
+            --color*=MODE   "color mode";
         -h, --help*         "show help message";
         -v, --version       "show version";
     };
@@ -472,6 +509,25 @@ fn main() {
         println!("v{}", env!("CARGO_PKG_VERSION"));
         exit(0)
     }
+
+    match matches.opt_strs("color")
+        .into_iter()
+        .next_back()
+        .as_deref()
+        .unwrap_or("never")
+        .parse()
+    {
+        Ok(ColorMode::Never) => COLOR.store(false, Ordering::Release),
+        Ok(ColorMode::Always) => COLOR.store(true, Ordering::Release),
+        Ok(ColorMode::Auto) => {
+            COLOR.store(atty::is(Stream::Stdout), Ordering::Release)
+        },
+        Err(e) => {
+            eprintln!("{e}");
+            exit(2)
+        },
+    }
+
 
     if !matches.free.is_empty() {
         for s in &matches.free {
@@ -567,6 +623,6 @@ fn error<T>(s: &str, e: peg::error::ParseError<LineCol>) -> Vec<T> {
     } else if !near.is_empty() {
         eprint!("near `{near}` ");
     }
-    eprintln!("{e}");
+    eprintln!("{}", color!(31;1, e));
     Vec::new()
 }
