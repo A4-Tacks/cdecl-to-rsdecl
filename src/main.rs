@@ -379,6 +379,7 @@ peg::parser!(grammar parser() for str {
         / "(" tt()* ")"
         / "[" tt()* "]"
         / #{any!(^"{}()[]")} _
+        / expected!("any")
 
     rule adt() = ("struct" / "union" / "enum") ib() _ (&"{" tt() / ident() (_ &"{" tt())?)
     rule share() -> String
@@ -482,8 +483,7 @@ peg::parser!(grammar parser() for str {
         = _ s:(f:c_func() {Left(f)} / a:c_array() {Right(a)}) {s}
 
     rule c_func() -> Vec<CDecl>
-        = "(" _ params:c_param() ++ (_ "," _) _ ")" {params}
-        / "(" _ ")" { vec![] }
+        = "(" _ params:c_param() ** (_ "," _) _ ")" {params}
 
     rule c_array() -> Option<String>
         = "[" _ lit:(l:literal() _ {l})? "]" {lit}
