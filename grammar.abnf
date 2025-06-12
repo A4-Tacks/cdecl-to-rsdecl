@@ -44,12 +44,12 @@ rs-param    = [ident _":"_] rs-type
 
 attr    = ("const" / "volatile" / "restrict" / "_Atomic") ib
 attrs   = *(attr _)
-ident   = <[a-zA-Z_][a-zA-Z0-9_]*> ib
-number  = <(0[xX][0-9a-fA-F]+|0[bB][01]+|\d+)[uUlL]*> ib
+ident   = ~<[a-zA-Z_][a-zA-Z0-9_]*> ib @ident
+number  = ~<(0[xX][0-9a-fA-F]+|0[bB][01]+|\d+)[uUlL]*> ib @number
 literal = number / ident
-_       = <[ \t\n]*>
-__      = <[ \t\n]+>
-ib      = !<[a-zA-Z0-9_]>
+_       = ~<[ \t\n]*>
+__      = ~<[ \t\n]+>
+ib      = !(~<[a-zA-Z0-9_]>)
 tt      = "{" *tt "}"
         / "(" *tt ")"
         / "[" *tt "]"
