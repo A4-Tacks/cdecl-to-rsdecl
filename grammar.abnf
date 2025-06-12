@@ -44,15 +44,17 @@ rs-param    = [ident _":"_] rs-type
 
 attr    = ("const" / "volatile" / "restrict" / "_Atomic") ib
 attrs   = *(attr _)
-ident   = ~<[a-zA-Z_][a-zA-Z0-9_]*> ib @ident
+ident   = alpha *(alpha / digit) ib @ident
 number  = ~<(0[xX][0-9a-fA-F]+|0[bB][01]+|\d+)[uUlL]*> ib @number
 literal = number / ident
 _       = ~<[ \t\n]*>
 __      = ~<[ \t\n]+>
-ib      = !(~<[a-zA-Z0-9_]>)
+ib      = !alpha
 tt      = "{" *tt "}"
         / "(" *tt ")"
         / "[" *tt "]"
         / <[^{}()\[\]]> _
 adt     = ("struct" / "union" / "enum") ib _ (&"{" tt / ident [_ &"{" tt])
 share   = adt / ident
+alpha   = ~<[^\x00-\x20!"#%&'()*+,\-./0-9:;<=\x3e?@\[\\\]^`{|}~\x7f]>
+digit   = ~<[0-9]>

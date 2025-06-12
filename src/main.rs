@@ -350,8 +350,10 @@ const KWDS: &[&str] = &[
 ];
 
 peg::parser!(grammar parser() for str {
+    rule alpha() = #{any!(^"\x00-\x20!\"#%&'()*+,./0-9:;<=\x3e?@[\\]^`{|}~\x7f-")}()
+    rule digit() = #{any!("0-9")}()
     rule ident() -> String
-        = s:$(#{any!("a-zA-Z_")} #{any!("a-zA-Z0-9_")}*) ib()
+        = s:$(alpha() (alpha() / digit())*) ib()
         { s.into() }
         / expected!("ident")
     rule nident() -> String
@@ -370,7 +372,7 @@ peg::parser!(grammar parser() for str {
     rule num_suf() = #{any!("uUlL")}*
     rule _() = #{any!(" \t\r\n")}*
     rule __() = #{any!(" \t\r\n")}+
-    rule ib() = !#{any!("a-zA-Z0-9_")}
+    rule ib() = !alpha()
 
     rule tt()
         = "{" tt()* "}"
