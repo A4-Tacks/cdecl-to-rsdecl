@@ -361,7 +361,7 @@ peg::parser!(grammar parser() for str {
     rule literal() -> String
         = s:$(number()) { s.into() }
         / ident()
-    rule attr() = "const" / "volatile" / "restrict"
+    rule attr() = "const" / "volatile" / "restrict" / "_Atomic"
     rule attrs() -> String = s:(s:$(attr()++_) _ {s})? {s.unwrap_or_default().into()}
     rule num_suf() = #{any!("uUlL")}*
     rule _() = #{any!(" \t\r\n")}*

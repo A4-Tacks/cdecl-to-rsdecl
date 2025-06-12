@@ -42,7 +42,7 @@ rs-param    = [ident _":"_] rs-type
 
 ;; ------------------------------------------------
 
-attr    = "const" / "volatile" / "restrict"
+attr    = "const" / "volatile" / "restrict" / "_Atomic"
 attrs   = *(attr _)
 ident   = <[a-zA-Z_][a-zA-Z0-9_]*>
 number  = <(0[xX][0-9a-fA-F]+|0[bB][01]+|\d+)[uUlL]*>
