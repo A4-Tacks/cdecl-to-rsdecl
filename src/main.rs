@@ -80,16 +80,17 @@ impl FromStr for ColorMode {
 #[derive(Debug, Clone, PartialEq)]
 struct CDecl {
     share: String,
-    declarations: Vec<DeclTree<Self>>,
+    declarations: Vec<(DeclTree<Self>, String)>,
 }
 
 impl CDecl {
     fn into_rsdecl(self) -> Vec<RsDecl> {
         self.declarations.into_iter()
-            .map(|cdecl| {
+            .map(|(cdecl, init)| {
                 let mut rsdecl = RsDecl {
                     name: Default::default(),
                     ty: DeclTree::Term(self.share.clone()),
+                    init,
                 };
 
                 cdecl.cdecl_to_rsdecl(&mut rsdecl);
@@ -102,7 +103,7 @@ impl CDecl {
 impl Display for CDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.share)?;
-        if let Some(first) = self.declarations.first() {
+        if let Some((first, init)) = self.declarations.first() {
             let first_output = first.output_c();
             if !self.share.is_empty()
             && !first_output.is_empty()
@@ -113,8 +114,11 @@ impl Display for CDecl {
             }
             f.write_str(&first_output)?;
 
-            for rest in &self.declarations[1..] {
+            if !init.trim().is_empty() { write!(f, " {init}")? }
+
+            for (rest, init) in &self.declarations[1..] {
                 write!(f, ", {}", rest.output_c())?;
+                if !init.trim().is_empty() { write!(f, " {init}")? }
             }
         }
         Ok(())
@@ -125,6 +129,7 @@ impl Display for CDecl {
 struct RsDecl {
     name: String,
     ty: DeclTree<Self>,
+    init: String,
 }
 
 impl RsDecl {
@@ -132,7 +137,7 @@ impl RsDecl {
         let mut c_decl = CDecl {
             share: Default::default(),
             declarations: vec![
-                DeclTree::Term(self.name),
+                (DeclTree::Term(self.name), self.init),
             ],
         };
         self.ty.rsdecl_to_cdecl(&mut c_decl);
@@ -143,10 +148,15 @@ impl RsDecl {
 impl Display for RsDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.name.is_empty() {
-            f.write_str(&self.ty.output_rs())
+            f.write_str(&self.ty.output_rs())?
         } else {
-            write!(f, "{}: {}", self.name, self.ty.output_rs())
+            write!(f, "{}: {}", self.name, self.ty.output_rs())?
         }
+
+        if !self.init.trim().is_empty() {
+            write!(f, " {}", self.init)?;
+        }
+        Ok(())
     }
 }
 
@@ -229,7 +239,7 @@ impl DeclTree<RsDecl> {
     }
 
     fn rsdecl_to_cdecl(self, decl: &mut CDecl) {
-        let ty = decl.declarations.first_mut().unwrap();
+        let (ty, _) = decl.declarations.first_mut().unwrap();
         match self {
             DeclTree::Pointer { attr, sub } => {
                 *ty = DeclTree::Pointer { attr, sub: take(ty).into() };
@@ -283,7 +293,7 @@ impl DeclTree<CDecl> {
                     if output.is_empty() {
                         attr
                     } else {
-                        format!("{} {}", attr, output)
+                        format!("{attr} {output}")
                     }
                 }
             },
@@ -352,6 +362,11 @@ const KWDS: &[&str] = &[
 peg::parser!(grammar parser() for str {
     rule alpha() = #{any!(^"\x00-\x20!\"#%&'()*+,./0-9:;<=\x3e?@[\\]^`{|}~\x7f-")}()
     rule digit() = #{any!("0-9")}()
+    rule init() -> &'input str = _ s:$("=" _ (!";" !"," tt())*)? _ {s.unwrap_or_default()}
+    rule string()
+        = quiet!{"'"  ("\\" [_] / #{any!(^"'\\")}())* "'"}
+        / quiet!{"\"" ("\\" [_] / #{any!(^"\"\\")}())* "\""}
+        / expected!("string")
     rule ident() -> String
         = s:$(alpha() (alpha() / digit())*) ib()
         { s.into() }
@@ -378,7 +393,8 @@ peg::parser!(grammar parser() for str {
         = "{" tt()* "}"
         / "(" tt()* ")"
         / "[" tt()* "]"
-        / #{any!(^"{}()[]")} _
+        / #{any!(^"{}()[]'\"")} _
+        / string() _
         / expected!("any")
 
     rule adt() = ("struct" / "union" / "enum") ib() _ (&"{" tt() / ident() (_ &"{" tt())?)
@@ -390,12 +406,12 @@ peg::parser!(grammar parser() for str {
         = d:rs_decl() ++ ";" ";"? {d}
 
     rule rs_decl() -> RsDecl
-        = _ name:ident() _ ":" _ ty:rs_type() _
-        { RsDecl { name, ty } }
+        = _ name:ident() _ ":" _ ty:rs_type() _ init:init()
+        { RsDecl { name, ty, init: init.into() } }
 
     rule rs_param() -> RsDecl
         = _ name:(n:ident() _ ":" _ {n})? ty:rs_type() _
-        { RsDecl { name: name.unwrap_or_default(), ty } }
+        { RsDecl { name: name.unwrap_or_default(), ty, init: String::new() } }
 
     rule rs_type() -> DeclTree<RsDecl>
         = attr:attrs() "*" _ sub:rs_type() { DeclTree::Pointer { attr, sub: sub.into() } }
@@ -421,7 +437,7 @@ peg::parser!(grammar parser() for str {
             let mut p = p;
             assert_eq!(p.declarations.len(), 1);
             if let Some(name) = name {
-                *p.declarations[0].term_mut() = name;
+                *p.declarations[0].0.term_mut() = name;
             }
             p
         }
@@ -437,7 +453,7 @@ peg::parser!(grammar parser() for str {
             }
             sub
         }
-        / declarations:c_body() ++ (_ "," _)
+        / declarations:(b:c_body() i:init() {(b, i.into())}) ++ (_ "," _)
         { CDecl { share: String::new(), declarations } }
 
     rule c_body() -> DeclTree<CDecl>
@@ -455,7 +471,7 @@ peg::parser!(grammar parser() for str {
     rule c_param() -> CDecl
         = share:share()++_ _ sub:c_pbody()?
         {
-            let mut sub = sub.unwrap_or_default();
+            let sub = (sub.unwrap_or_default(), String::new());
             CDecl { share: share.join(" "), declarations: vec![sub] }
         }
 

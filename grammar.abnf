@@ -8,7 +8,7 @@ c-declare-or-cast
 
 ; 因为没有符号信息二义有些严重, 利用空白符断言一下常见的例如 size_t f(size_t)
 c-declare   = share !"(" _ c-declare
-            / c-body *(_","_ c-body)
+            / c-body [_ init] *(_","_ c-body [_ init])
 c-body      = c-ptr c-body
             / c-atom *c-suffix
 c-atom      = "(" _ c-body _ ")"
@@ -28,7 +28,7 @@ c-ptr       = "*" _ attrs
 
 ;; ------------------------------------------------
 
-rsdecl      = _ ident _ ":" _ rs-type _ [";" [rsdecl]]
+rsdecl      = _ ident _ ":" _ rs-type _ [init _] [";" [rsdecl]]
 rs-type     = rs-ptr
             / rs-array
             / rs-func
@@ -53,9 +53,12 @@ ib      = !alpha
 tt      = "{" *tt "}"
         / "(" *tt ")"
         / "[" *tt "]"
-        / ~<[^{}()\[\]]> _
+        / ~<[^{}()\[\]'"]> _
+        / string _
         @any
 adt     = ("struct" / "union" / "enum") ib _ (&"{" tt / ident [_ &"{" tt])
 share   = adt / ident
 alpha   = ~<[^\x00-\x20!"#%&'()*+,\-./0-9:;<=\x3e?@\[\\\]^`{|}~\x7f]>
 digit   = ~<[0-9]>
+string  = ~<'(?:\\.|[^'\\])*'> / ~<"(?:\\.|[^"\\])*"> @string
+init    = "=" _ *(!";" !"," tt)
