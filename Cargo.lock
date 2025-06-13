@@ -56,7 +56,7 @@ dependencies = [
 
 [[package]]
 name = "cdecl-to-rsdecl"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "atty",
  "char-classes",
