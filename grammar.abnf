@@ -12,7 +12,7 @@ c-declare   = share !"(" _ c-declare
 c-body      = c-ptr c-body
             / c-atom *c-suffix
 c-atom      = "(" _ c-body _ ")"
-            / ident
+            / nident
 
 c-param     = share *(_ share) [_ c-pbody]
 
@@ -22,42 +22,46 @@ c-patom     = "(" _ c-pbody _ ")" *c-suffix
             / 1*c-suffix
 
 c-suffix    = _ (c-func / c-array)
-c-func      = "(" _ [c-param *(_","_ c-param) _] ")"
+c-func      = "(" _ [c-param *(_","_ c-param) _] ")" *(_ attrq)
 c-array     = "[" _ [literal _] "]"
 c-ptr       = "*" _ attrs
 
 ;; ------------------------------------------------
 
-rsdecl      = _ ident _ ":" _ rs-type _ [init _] [";" [rsdecl]]
+rsdecl      = _ nident _ ":" _ rs-type _ [init _] [";" [rsdecl]]
 rs-type     = rs-ptr
             / rs-array
             / rs-func
             / "(" _ rs-type _ ")"
             / share *(_ share)
 
-rs-ptr      = *(attr _) "*" _ rs-type
+rs-ptr      = attrs "*" _ rs-type
 rs-array    = "[" _ rs-type _ [";" _ literal _] "]"
-rs-func     = "fn" _ "(" _ [rs-param _ *(","_ rs-param _) ["," _]] ")" [_ "->" _ rs-type]
-rs-param    = [ident _":"_] rs-type
+rs-func     = *(attrq _) "fn" _ "(" _ [rs-param _ *(","_ rs-param _) ["," _]] ")" [_ "->" _ rs-type]
+rs-param    = [nident _":"_] rs-type
 
 ;; ------------------------------------------------
 
 attr    = ("const" / "volatile" / "restrict" / "_Atomic") ib
+        / attrq
 attrs   = *(attr _)
+attrq   = &("[" _ "[") tt
 ident   = alpha *(alpha / digit) ib @ident
+nident  = ident *(_ attrq)
 number  = ~<(0[xX][0-9a-fA-F]+|0[bB][01]+|\d+)[uUlL]*> ib @number
-literal = number / ident
+literal = 1*tt @number
 _       = ~<[ \t\n]*>
 __      = ~<[ \t\n]+>
 ib      = !alpha
-tt      = "{" *tt "}"
-        / "(" *tt ")"
-        / "[" *tt "]"
-        / ~<[^{}()\[\]'"]> _
-        / string _
+tt      = "{" _ *(tt _) "}"
+        / "(" _ *(tt _) ")"
+        / "[" _ *(tt _) "]"
+        / ~<[^{}()\[\]'"]>
+        / string
         @any
 adt     = ("struct" / "union" / "enum") ib _ (&"{" tt / ident [_ &"{" tt])
-share   = adt / ident
+        / "typeof" ib _ &"(" tt
+share   = adt / ident / attrq
 alpha   = ~<[^\x00-\x20!"#%&'()*+,\-./0-9:;<=\x3e?@\[\\\]^`{|}~\x7f]>
 digit   = ~<[0-9]>
 string  = ~<'(?:\\.|[^'\\])*'> / ~<"(?:\\.|[^"\\])*"> @string

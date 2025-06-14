@@ -163,7 +163,7 @@ impl Display for RsDecl {
 #[derive(Debug, Clone, PartialEq)]
 enum DeclTree<Param> {
     Pointer { attr: String, sub: Box<Self> },
-    Function { sub: Box<Self>, params: Vec<Param> },
+    Function { sub: Box<Self>, params: Vec<Param>, attr: String },
     Array { sub: Box<Self>, len: Option<String> },
     Term(String),
 }
@@ -210,7 +210,7 @@ impl DeclTree<RsDecl> {
             DeclTree::Pointer { attr, sub } => {
                 format!("{}{}", color!(1, format_args!("{attr}*")), sub.output_rs())
             },
-            DeclTree::Function { sub, params } => {
+            DeclTree::Function { sub, params, attr } => {
                 let mut ret = sub.output_rs();
                 if ret == "void" {
                     ret = String::new()
@@ -221,17 +221,19 @@ impl DeclTree<RsDecl> {
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(&color!(1;35, ", "));
-                format!("{}({params}){ret}", color!(33, "fn"))
+                format!("{}({params}){ret}", color!(33, format_args!("{attr}fn")))
             },
             DeclTree::Array { sub, len } => {
+                let l_bracket = color!(1;34, "[");
+                let r_bracket = color!(1;34, "]");
                 if let Some(len) = len {
                     format!(
-                        "[{}{}]",
+                        "{l_bracket}{}{} {len}{r_bracket}",
                         sub.output_rs(),
-                        color!(1;34, format_args!("; {len}")),
+                        color!(1;34, ";"),
                     )
                 } else {
-                    format!("[{}]", sub.output_rs())
+                    format!("{l_bracket}{}{r_bracket}", sub.output_rs())
                 }
             },
             DeclTree::Term(s) => s.clone(),
@@ -245,11 +247,11 @@ impl DeclTree<RsDecl> {
                 *ty = DeclTree::Pointer { attr, sub: take(ty).into() };
                 sub.rsdecl_to_cdecl(decl);
             },
-            DeclTree::Function { sub, params } => {
+            DeclTree::Function { sub, params, attr } => {
                 let params = params.into_iter()
                     .map(RsDecl::into_cdecl)
                     .collect();
-                *ty = DeclTree::Function { sub: take(ty).into(), params };
+                *ty = DeclTree::Function { sub: take(ty).into(), params, attr };
                 sub.rsdecl_to_cdecl(decl);
             },
             DeclTree::Array { sub, len } => {
@@ -297,29 +299,34 @@ impl DeclTree<CDecl> {
                     }
                 }
             },
-            DeclTree::Function { sub, params } => {
+            DeclTree::Function { sub, params, attr } => {
                 let params = params.iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(&color!(1;35, ", "));
-                format!("{}({})", paren(sub.is_pointer(), &sub.output_c()), params)
+                let sub = paren(sub.is_pointer(), &sub.output_c());
+                let l_paren = color!(33, "(");
+                let r_paren = color!(33, format_args!("){attr}"));
+                format!("{sub}{l_paren}{params}{r_paren}")
             },
             DeclTree::Array { sub, len } => {
                 let sub = paren(sub.is_pointer(), &sub.output_c());
                 if let Some(len) = len {
-                    format!("{sub}[{}]", color!(1;34, len))
+                    let l_bracket = color!(1;34, "[");
+                    let r_bracket = color!(1;34, "]");
+                    format!("{sub}{l_bracket}{len}{r_bracket}")
                 } else {
-                    format!("{sub}[]")
+                    format!("{sub}{}", color!(1;34, "[]"))
                 }
             },
             DeclTree::Term(s) => s.clone(),
         }
     }
 
-    fn merge_suffix(self, suf: Either<Vec<CDecl>, Option<String>>) -> Self {
+    fn merge_suffix(self, suf: Either<(Vec<CDecl>, String), Option<String>>) -> Self {
         let sub = Box::new(self);
         match suf {
-            Left(params) => DeclTree::Function { sub, params },
+            Left((params, attr)) => DeclTree::Function { sub, params, attr },
             Right(len) => DeclTree::Array { sub, len },
         }
     }
@@ -331,14 +338,14 @@ impl DeclTree<CDecl> {
                 decl.ty = DeclTree::Pointer { attr, sub: ty.into() };
                 sub.cdecl_to_rsdecl(decl);
             },
-            DeclTree::Function { sub, params } => {
+            DeclTree::Function { sub, params, attr} => {
                 let ty = take(&mut decl.ty);
                 let params = params.into_iter()
                     .map(CDecl::into_rsdecl)
                     .inspect(|decls| assert_eq!(decls.len(), 1))
                     .map(|decls| decls.into_iter().next().unwrap())
                     .collect();
-                decl.ty = DeclTree::Function { sub: ty.into(), params };
+                decl.ty = DeclTree::Function { sub: ty.into(), params, attr };
                 sub.cdecl_to_rsdecl(decl);
             },
             DeclTree::Array { sub, len } => {
@@ -372,17 +379,16 @@ peg::parser!(grammar parser() for str {
         { s.into() }
         / expected!("ident")
     rule nident() -> String
-        = i:ident() #{is(!KWDS.contains(&&*i))} {i}
+        = i:ident() #{is(!KWDS.contains(&&*i))} attrq:$((_ attrq())*) { i+attrq }
         / expected!("ident")
     rule number()
         = quiet!{"0x" / "0X"} #{any!("0-9a-fA-F")}+ num_suf() ib()
         / quiet!{"0b" / "0B"} #{any!("01")}+ num_suf() ib()
         / #{any!("0-9")}+ num_suf() ib()
         / expected!("number")
-    rule literal() -> String
-        = s:$(number()) { s.into() }
-        / ident()
-    rule attr() = ("const" / "volatile" / "restrict" / "_Atomic") ib()
+    rule literal() -> String = s:$(tt()+) { s.into() } / expected!("number")
+    rule attrq() = &("[" _ "[") tt()
+    rule attr() = ("const" / "volatile" / "restrict" / "_Atomic") ib() / attrq()
     rule attrs() -> String = s:(s:$(attr()++_) _ {s})? {s.unwrap_or_default().into()}
     rule num_suf() = #{any!("uUlL")}*
     rule _() = #{any!(" \t\r\n")}*
@@ -390,38 +396,44 @@ peg::parser!(grammar parser() for str {
     rule ib() = !alpha()
 
     rule tt()
-        = "{" tt()* "}"
-        / "(" tt()* ")"
-        / "[" tt()* "]"
-        / #{any!(^"{}()[]'\"")} _
-        / string() _
+        = "{" _ (tt()_)* "}"
+        / "(" _ (tt()_)* ")"
+        / "[" _ (tt()_)* "]"
+        / #{any!(^"{}()[]'\"")}()
+        / string()
         / expected!("any")
 
-    rule adt() = ("struct" / "union" / "enum") ib() _ (&"{" tt() / ident() (_ &"{" tt())?)
+    rule adt()
+        = ("struct" / "union" / "enum") ib() _ (&"{" tt() / ident() (_ &"{" tt())?)
+        / "typeof" ib() _ &"(" tt()
     rule share() -> String
         = s:$(adt()) {s.into()}
         / ident()
+        / s:$(attrq()) {s.into()}
 
     pub rule rs_decls() -> Vec<RsDecl>
         = d:rs_decl() ++ ";" ";"? {d}
 
     rule rs_decl() -> RsDecl
-        = _ name:ident() _ ":" _ ty:rs_type() _ init:init()
+        = _ name:nident() _ ":" _ ty:rs_type() _ init:init()
         { RsDecl { name, ty, init: init.into() } }
 
     rule rs_param() -> RsDecl
-        = _ name:(n:ident() _ ":" _ {n})? ty:rs_type() _
+        = _ name:(n:nident() _ ":" _ {n})? ty:rs_type() _
         { RsDecl { name: name.unwrap_or_default(), ty, init: String::new() } }
 
     rule rs_type() -> DeclTree<RsDecl>
         = attr:attrs() "*" _ sub:rs_type() { DeclTree::Pointer { attr, sub: sub.into() } }
-        / "[" _ sub:rs_type() _ len:(";" _ l:literal() _ {l})? "]"
-            { DeclTree::Array { sub: sub.into(), len } }
-        / "fn" _ "(" _ params:(p:rs_param()++"," ","? {p})? _ ")" ret:(_ "->" _ r:rs_type() {r})?
+        / attr:(s:$(attrq()++_) _ {s})?
+          "fn" _ "(" _ params:(p:rs_param()++"," ","? {p})? _ ")"
+          ret:(_ "->" _ r:rs_type() {r})?
             { DeclTree::Function {
                 sub: ret.unwrap_or_else(|| DeclTree::Term("void".into())).into(),
                 params: params.unwrap_or_default(),
+                attr: attr.unwrap_or_default().into(),
             } }
+        / "[" _ sub:rs_type() _ len:(";" _ l:literal() _ {l})? "]"
+            { DeclTree::Array { sub: sub.into(), len } }
         / "(" _ ty:rs_type() _ ")" {ty}
         / name:$(share()**_) { DeclTree::Term(name.into()) }
 
@@ -457,7 +469,7 @@ peg::parser!(grammar parser() for str {
         { CDecl { share: String::new(), declarations } }
 
     rule c_body() -> DeclTree<CDecl>
-        = "*" _ attr:attrs() sub:c_body() { DeclTree::Pointer { attr, sub: sub.into() }}
+        = attr:c_ptr() sub:c_body() { DeclTree::Pointer { attr, sub: sub.into() }}
         / sub:c_atom()
           suf:c_suffix()*
         {
@@ -495,11 +507,13 @@ peg::parser!(grammar parser() for str {
             suf.into_iter().fold(sub, DeclTree::merge_suffix)
         }
 
-    rule c_suffix() -> Either<Vec<CDecl>, Option<String>>
+    rule c_suffix() -> Either<(Vec<CDecl>, String), Option<String>>
         = _ s:(f:c_func() {Left(f)} / a:c_array() {Right(a)}) {s}
 
-    rule c_func() -> Vec<CDecl>
-        = "(" _ params:c_param() ** (_ "," _) _ ")" {params}
+    rule c_func() -> (Vec<CDecl>, String)
+        = "(" _ params:c_param() ** (_ "," _) _ ")"
+          attr:(_ s:$(attrq()++_) {s})?
+        {(params, attr.unwrap_or_default().into())}
 
     rule c_array() -> Option<String>
         = "[" _ lit:(l:literal() _ {l})? "]" {lit}
