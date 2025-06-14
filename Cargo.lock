@@ -56,7 +56,7 @@ dependencies = [
 
 [[package]]
 name = "cdecl-to-rsdecl"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "atty",
  "char-classes",
@@ -156,9 +156,9 @@ dependencies = [
 
 [[package]]
 name = "getopts-macro"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c9c8d8febe2650f8bc76f9408c7782fbf865fead263c2b4f03792dce575e4e3"
+checksum = "636f837a7ee35b473e4a43ddab00c891f04d89bcb5e0361336fd1799626603f2"
 dependencies = [
  "getopts",
 ]

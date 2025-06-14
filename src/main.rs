@@ -526,11 +526,12 @@ fn main() {
     let options = getopts_macro::getopts_options! {
         -c                  "parse rust, into c";
         -o, --owned         "c owned rule, e.g `int f(int())` -> `int f(int (*)())`";
-            --color*=MODE   "color mode";
+            --color*?=MODE  "color mode";
         -h, --help*         "show help message";
         -v, --version       "show version";
     };
-    let matches = match options.parse(args().skip(1)) {
+    let args = args().skip(1).collect::<Vec<_>>();
+    let matches = match options.parse(&args) {
         Ok(matches) => matches,
         Err(e) => {
             eprintln!("{e}");
@@ -553,10 +554,9 @@ fn main() {
         exit(0)
     }
 
-    match matches.opt_strs("color")
-        .into_iter()
-        .next_back()
-        .as_deref()
+    match matches.opt_positions("color").last()
+        .map(|&i| args[i].split_once('=')
+            .map_or("always", |it| it.1))
         .unwrap_or("never")
         .parse()
     {
