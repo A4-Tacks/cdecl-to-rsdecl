@@ -386,7 +386,7 @@ peg::parser!(grammar parser() for str {
         / quiet!{"0b" / "0B"} #{any!("01")}+ num_suf() ib()
         / #{any!("0-9")}+ num_suf() ib()
         / expected!("number")
-    rule literal() -> String = s:$(tt()+) { s.into() } / expected!("number")
+    rule literal() -> String = s:$(tt()+) { s.into() }
     rule attrq() = &("[" _ "[") tt()
     rule attr() = ("const" / "volatile" / "restrict" / "_Atomic") ib() / attrq()
     rule attrs() -> String = s:(s:$(attr()++_) _ {s})? {s.unwrap_or_default().into()}
@@ -399,6 +399,8 @@ peg::parser!(grammar parser() for str {
         = "{" _ (tt()_)* "}"
         / "(" _ (tt()_)* ")"
         / "[" _ (tt()_)* "]"
+        / ident()
+        / number()
         / #{any!(^"{}()[]'\"")}()
         / string()
         / expected!("any")
