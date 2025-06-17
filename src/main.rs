@@ -435,7 +435,7 @@ peg::parser!(grammar parser() for str {
         / "[" _ sub:rs_type() _ len:(";" _ l:literal() _ {l})? "]"
             { DeclTree::Array { sub: sub.into(), len } }
         / "(" _ ty:rs_type() _ ")" {ty}
-        / name:$(share()**_) { DeclTree::Term(name.into()) }
+        / name:$(share()++_) { DeclTree::Term(name.into()) }
 
     pub rule c_decls() -> Vec<CDecl>
         = d:c_decl() ++ ";" ";"? {d}
