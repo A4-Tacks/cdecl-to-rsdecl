@@ -1,6 +1,6 @@
 ;; abnf like grammar declaration, use peg.jq quicktest
 
-cdecl       = _ c-declare-or-cast _ [";" _ [cdecl]]
+cdecl       = _ c-declare-or-cast _ [";" _ [cdecl] / "," _]
 
 c-declare-or-cast
             = "(" _ c-param _ ")" [_ ident]

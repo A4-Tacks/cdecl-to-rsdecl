@@ -440,7 +440,7 @@ peg::parser!(grammar parser() for str {
         / name:$(share()++_) { DeclTree::Term(name.into()) }
 
     pub rule c_decls() -> Vec<CDecl>
-        = d:c_decl() ++ ";" ";"? {d}
+        = d:c_decl() ++ ";" ","? ";"? {d}
 
     rule c_decl() -> CDecl
         = _ d:c_declare_or_cast() _ {d}
