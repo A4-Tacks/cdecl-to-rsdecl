@@ -10,6 +10,8 @@ use std::{
 };
 
 use atty::Stream;
+use cdecl_to_rsdecl::trim_csi;
+use char_classes as cc;
 use char_classes::FirstElem;
 use either::Either::{self, Left, Right};
 use getopts_macro::getopts::Matches;
@@ -20,7 +22,7 @@ use peg::{str::LineCol, RuleResult};
 macro_rules! any {
     ($($pat:tt)*) => {
         |str, i| str[i..].first_elem()
-            .filter(char_classes::any!($($pat)*))
+            .filter(cc::any!($($pat)*))
             .map_or(RuleResult::Failed, |ch| RuleResult::Matched(i+ch.len_utf8(), ch))
     };
 }
@@ -107,8 +109,8 @@ impl Display for CDecl {
             let first_output = first.output_c();
             if !self.share.is_empty()
             && !first_output.is_empty()
-            && !first_output.starts_with('[')
-            && !first_output.ends_with('*')
+            && !trim_csi(&first_output).starts_with('[')
+            && !trim_csi(&first_output).ends_with('*')
             {
                 f.write_str(" ")?;
             }
@@ -660,7 +662,7 @@ fn parse_rs(s: &str) -> Vec<RsDecl> {
 fn error<T>(s: &str, e: peg::error::ParseError<LineCol>) -> Vec<T> {
     let near = s[e.location.offset..]
         .chars()
-        .take_while(char_classes::any!(^" \t\r\n"))
+        .take_while(cc::any!(^" \t\r\n"))
         .take(5)
         .collect::<String>();
     if e.location.offset == s.len() {
