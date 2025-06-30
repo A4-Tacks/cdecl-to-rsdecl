@@ -469,8 +469,8 @@ peg::parser!(grammar parser() for str {
             }
             sub
         }
-        / declarations:(b:c_body() i:init() {(b, i.into())}) ++ (_ "," _)
-        { CDecl { share: String::new(), declarations } }
+        / share:share() _ declarations:(b:c_body() i:init() {(b, i.into())}) ++ (_ "," _)
+        { CDecl { share, declarations } }
 
     rule c_body() -> DeclTree<CDecl>
         = attr:c_ptr() sub:c_body() { DeclTree::Pointer { attr, sub: sub.into() }}
