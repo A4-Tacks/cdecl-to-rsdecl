@@ -28,7 +28,7 @@ c-ptr       = "*" _ attrs
 
 ;; ------------------------------------------------
 
-rsdecl      = _ nident _ ":" _ rs-type _ [init _] [";" [rsdecl]]
+rsdecl      = _ [nident _] ":" _ rs-type _ [init _] [";" [rsdecl]]
 rs-type     = rs-ptr
             / rs-array
             / rs-func

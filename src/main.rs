@@ -104,6 +104,9 @@ impl CDecl {
 
 impl Display for CDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let is_cast = self.declarations.len() == 1
+            && self.declarations[0].0.term().is_empty();
+        if is_cast { write!(f, "(")? }
         write!(f, "{}", self.share)?;
         if let Some((first, init)) = self.declarations.first() {
             let first_output = first.output_c();
@@ -123,6 +126,7 @@ impl Display for CDecl {
                 if !init.trim().is_empty() { write!(f, " {init}")? }
             }
         }
+        if is_cast { write!(f, ")")? }
         Ok(())
     }
 }
@@ -149,11 +153,7 @@ impl RsDecl {
 
 impl Display for RsDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.name.is_empty() {
-            f.write_str(&self.ty.output_rs())?
-        } else {
-            write!(f, "{}: {}", self.name, self.ty.output_rs())?
-        }
+        write!(f, "{}: {}", self.name, self.ty.output_rs())?;
 
         if !self.init.trim().is_empty() {
             write!(f, " {}", self.init)?;
@@ -358,6 +358,17 @@ impl DeclTree<CDecl> {
             DeclTree::Term(name) => decl.name = name,
         }
     }
+
+    fn term(&self) -> &str {
+        match self {
+            DeclTree::Pointer { sub, .. } |
+            DeclTree::Function { sub, .. } |
+            DeclTree::Array { sub, .. } => {
+                sub.term()
+            },
+            DeclTree::Term(term) => term,
+        }
+    }
 }
 
 const KWDS: &[&str] = &[
@@ -419,8 +430,8 @@ peg::parser!(grammar parser() for str {
         = d:rs_decl() ++ ";" ";"? {d}
 
     rule rs_decl() -> RsDecl
-        = _ name:nident() _ ":" _ ty:rs_type() _ init:init()
-        { RsDecl { name, ty, init: init.into() } }
+        = _ name:nident()? _ ":" _ ty:rs_type() _ init:init()
+        { RsDecl { name: name.unwrap_or_default(), ty, init: init.into() } }
 
     rule rs_param() -> RsDecl
         = _ name:(n:nident() _ ":" _ {n})? ty:rs_type() _
