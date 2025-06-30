@@ -540,6 +540,7 @@ peg::parser!(grammar parser() for str {
 fn main() {
     let options = getopts_macro::getopts_options! {
         -c                  "parse rust, into c";
+        -a, --auto          "auto try reverse parse";
         -o, --owned         "c owned rule, e.g `int f(int())` -> `int f(int (*)())`";
             --color*?=MODE  "color mode";
         -h, --help*         "show help message";
@@ -627,8 +628,20 @@ fn main() {
 
 fn process(matches: &Matches, s: &str) {
     let s = s.trim_end();
+    let mut to_c = matches.opt_present("c");
 
-    if matches.opt_present("c") {
+    if matches.opt_present("auto") {
+        let parsed_c = parser::c_decls(s).is_ok();
+        let parsed_rs = parser::rs_decls(s).is_ok();
+
+        if !parsed_rs && parsed_c {
+            to_c = false
+        } else if parsed_rs && !parsed_c {
+            to_c = true
+        }
+    }
+
+    if to_c {
         let mut rsdecls = parse_rs(s);
         owned_processor(matches, &mut rsdecls);
         rsdecls.into_iter()
