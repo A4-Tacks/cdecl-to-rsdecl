@@ -50,8 +50,8 @@ ident   = alpha *(alpha / digit) ib @ident
 nident  = ident *(_ attrq)
 number  = ~<(0[xX][0-9a-fA-F]+|0[bB][01]+|\d+)[uUlL]*> ib @number
 literal = 1*tt
-_       = ~<[ \t\n]*>
-__      = ~<[ \t\n]+>
+_       = ~<[ \t\n]*> [comment _]
+comment = ~<//.*> / ~</\*(?:(?!\*/)[\s\S])*\*/>
 ib      = !alpha
 tt      = "{" _ *(tt _) "}"
         / "(" _ *(tt _) ")"

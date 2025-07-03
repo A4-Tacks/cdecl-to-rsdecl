@@ -404,8 +404,8 @@ peg::parser!(grammar parser() for str {
     rule attr() = ("const" / "volatile" / "restrict" / "_Atomic") ib() / attrq()
     rule attrs() -> String = s:(s:$(attr()++_) _ {s})? {s.unwrap_or_default().into()}
     rule num_suf() = #{any!("uUlL")}*
-    rule _() = #{any!(" \t\r\n")}*
-    rule __() = #{any!(" \t\r\n")}+
+    rule _() = #{any!(" \t\r\n")}* (comment() _)?
+    rule comment() = quiet!{ "//" #{any!(^"\r\n")}* / "/*" (!"*/" [_])* "*/" }
     rule ib() = !alpha()
 
     rule tt()
