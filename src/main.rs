@@ -105,7 +105,8 @@ impl CDecl {
 impl Display for CDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let is_cast = self.declarations.len() == 1
-            && self.declarations[0].0.term().is_empty();
+            && self.declarations[0].0.term().is_empty()
+            && f.alternate();
         if is_cast { write!(f, "(")? }
         write!(f, "{}", self.share)?;
         if let Some((first, init)) = self.declarations.first() {
@@ -153,7 +154,10 @@ impl RsDecl {
 
 impl Display for RsDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.name, self.ty.output_rs())?;
+        let semi = (!self.name.is_empty() || f.alternate())
+            .then_some(": ")
+            .unwrap_or_default();
+        write!(f, "{}{semi}{}", self.name, self.ty.output_rs())?;
 
         if !self.init.trim().is_empty() {
             write!(f, " {}", self.init)?;
@@ -648,7 +652,7 @@ fn process(matches: &Matches, s: &str) {
             .map(RsDecl::into_cdecl)
             .for_each(|cdecl|
         {
-            println!("{cdecl};");
+            println!("{cdecl:#};");
         });
     } else {
         let cdecls = parse_c(s);
@@ -657,7 +661,7 @@ fn process(matches: &Matches, s: &str) {
             .for_each(|mut rsdecl|
         {
             owned_processor(matches, slice::from_mut(&mut rsdecl));
-            println!("{rsdecl};");
+            println!("{rsdecl:#};");
         });
     }
 }
