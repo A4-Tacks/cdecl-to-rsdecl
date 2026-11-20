@@ -127,8 +127,13 @@ fn main() {
 }
 
 fn process(matches: &Matches, s: &str) {
-    let s = s.trim_end();
+    let s = &mut s.trim_end().to_owned();
+    let mut tail = String::new();
     let mut to_c = matches.opt_present("c");
+
+    while s.ends_with([';', '{']) {
+        tail.extend(s.pop());
+    }
 
     if matches.opt_present("auto") {
         let parsed_c = parser::c_decls(s).is_ok();
@@ -148,7 +153,7 @@ fn process(matches: &Matches, s: &str) {
             .map(RsDecl::into_cdecl)
             .for_each(|cdecl|
         {
-            println!("{cdecl:#};");
+            println!("{cdecl:#}{tail}");
         });
     } else {
         let cdecls = parse_c(s);
@@ -157,7 +162,7 @@ fn process(matches: &Matches, s: &str) {
             .for_each(|mut rsdecl|
         {
             owned_processor(matches, slice::from_mut(&mut rsdecl));
-            println!("{rsdecl:#};");
+            println!("{rsdecl:#}{tail}");
         });
     }
 }
