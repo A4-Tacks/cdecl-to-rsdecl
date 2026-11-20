@@ -440,13 +440,14 @@ peg::parser!(pub grammar parser() for str {
         { RsDecl { name: name.unwrap_or_default(), ty, init: init.into() } }
 
     rule rs_param() -> RsDecl
-        = _ name:(n:nident() _ ":" _ {n})? ty:rs_type() _
+        = _ name:(n:nident() _ ":" _ {n})? ty:rs_type()
         { RsDecl { name: name.unwrap_or_default(), ty, init: String::new() } }
+        / "..." { RsDecl { name: String::new(), ty: DeclTree::Term("...".to_owned()), init: String::new() } }
 
     rule rs_type() -> DeclTree<RsDecl>
         = attr:attrs() "*" _ sub:rs_type() { DeclTree::Pointer { attr, sub: sub.into() } }
         / attr:(s:$(attrq()++_) _ {s})?
-          "fn" _ "(" _ params:(p:rs_param()++"," ","? {p})? _ ")"
+          "fn" _ "(" _ params:(p:rs_param()++(_ "," _) _ ","? {p})? _ ")"
           ret:(_ "->" _ r:rs_type() {r})?
             { DeclTree::Function {
                 sub: ret.unwrap_or_else(|| DeclTree::Term("void".into())).into(),
@@ -465,7 +466,7 @@ peg::parser!(pub grammar parser() for str {
         = _ d:c_declare_or_cast() _ {d}
 
     rule c_declare_or_cast() -> CDecl
-        = "(" _ p:c_param() _ ")" name:(_ i:ident() {i})?
+        = "(" _ p:c_cast() _ ")" name:(_ i:ident() {i})?
         {
             let mut p = p;
             assert_eq!(p.declarations.len(), 1);
@@ -477,7 +478,7 @@ peg::parser!(pub grammar parser() for str {
         / c_declare()
 
     rule c_declare() -> CDecl
-        = share:share() !"(" _ sub:c_declare() {
+        = share:share() _ !c_heur() sub:c_declare() {
             let mut sub = sub;
             if sub.share.is_empty() {
                 sub.share = share
@@ -501,16 +502,37 @@ peg::parser!(pub grammar parser() for str {
         = "(" _ sub:c_body() _ ")" {sub}
         / name:nident() {DeclTree::Term(name)}
 
-    rule c_param() -> CDecl
+    rule c_cast() -> CDecl
         = share:share()++_ _ sub:c_pbody()?
         {
             let sub = (sub.unwrap_or_default(), String::new());
             CDecl { share: share.join(" "), declarations: vec![sub] }
         }
 
+    rule c_param() -> CDecl
+        = share:share() _ !c_heur() sub:c_param() {
+            let mut sub = sub;
+            if sub.share.is_empty() {
+                sub.share = share
+            } else {
+                sub.share = format!("{share} {}", sub.share)
+            }
+            sub
+        }
+        / share:share() sub:(_ b:c_pbody() {b})? {
+            let sub = (sub.unwrap_or_default(), String::new());
+            CDecl { share, declarations: vec![sub] }
+        }
+        / "..." { CDecl { share: "...".to_owned(), declarations: vec![(Default::default(), String::new())] } }
+
     rule c_pbody() -> DeclTree<CDecl>
-        = attr:c_ptr() sub:c_pbody()?
-        { DeclTree::Pointer { attr, sub: sub.unwrap_or_default().into() }}
+        = attr:c_ptr() suf:c_suffix()+
+        {
+            let sub = DeclTree::Term(String::new());
+            DeclTree::Pointer { attr, sub: suf.into_iter().fold(sub, DeclTree::merge_suffix).into() }
+        }
+        / attr:c_ptr() sub:c_pbody()?
+        { DeclTree::Pointer { attr, sub: sub.unwrap_or_default().into() } }
         / c_patom()
 
     rule c_patom() -> DeclTree<CDecl>
@@ -521,6 +543,11 @@ peg::parser!(pub grammar parser() for str {
             } else {
                 suf.into_iter().fold(sub, DeclTree::merge_suffix)
             }
+        }
+        / name:nident() suf:c_suffix()*
+        {
+            let sub = DeclTree::Term(name);
+            suf.into_iter().fold(sub, DeclTree::merge_suffix)
         }
         / suf:c_suffix()+
         {
@@ -541,4 +568,235 @@ peg::parser!(pub grammar parser() for str {
 
     rule c_ptr() -> String
         = "*" _ attrs:attrs() {attrs}
+
+    rule c_heur() = nident() ("(" / "[")
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_buffer::{TestBuffer, test_utils::{expect, ExpectSnapshot}};
+
+    #[track_caller]
+    fn check_rs_into_c(ra_fixture_src: &str, expect: impl ExpectSnapshot) {
+        let mut buf = TestBuffer::with_name(ra_fixture_src);
+        let decl = parser::rs_decls(ra_fixture_src).unwrap();
+        assert_eq!(decl.len(), 1);
+        let output = decl.into_iter().next().unwrap().into_cdecl();
+
+        write!(buf, "{output:#}\n");
+        let re_output = output.into_rsdecl();
+        assert_eq!(re_output.len(), 1);
+        let re_output = format!("{:#}", re_output[0]);
+
+        if re_output != ra_fixture_src {
+            write!(buf, "{re_output}\n");
+        }
+
+        buf.expect(expect);
+    }
+
+    #[track_caller]
+    fn check_c_into_rs(ra_fixture_src: &str, expect: impl ExpectSnapshot) {
+        let mut buf = TestBuffer::with_name(ra_fixture_src);
+        let decl = parser::c_decls(ra_fixture_src).unwrap();
+        assert_eq!(decl.len(), 1);
+        let output = decl.into_iter().next().unwrap().into_rsdecl();
+        assert_eq!(output.len(), 1);
+        let output = output.into_iter().next().unwrap();
+
+        write!(buf, "{output:#}");
+        buf.expect(expect);
+    }
+
+    #[test]
+    fn rs_as_c() {
+        check_rs_into_c("x: int", expect![[r#"
+            int x
+        "#]]);
+        check_rs_into_c("x: ty", expect![[r#"
+            ty x
+        "#]]);
+        check_rs_into_c("x: fn()", expect![[r#"
+            void x()
+        "#]]);
+        check_rs_into_c("x: fn() -> ret", expect![[r#"
+            ret x()
+        "#]]);
+        check_rs_into_c("x: fn() -> int", expect![[r#"
+            int x()
+        "#]]);
+        check_rs_into_c("x: *fn() -> int", expect![[r#"
+            int (*x)()
+        "#]]);
+        check_rs_into_c("x: const*fn() -> int", expect![[r#"
+            int (*const x)()
+        "#]]);
+        check_rs_into_c("x: restrict*fn() -> int", expect![[r#"
+            int (*restrict x)()
+        "#]]);
+        check_rs_into_c("x: fn(int) -> int", expect![[r#"
+            int x(int)
+        "#]]);
+        check_rs_into_c("x: fn(m: int) -> int", expect![[r#"
+            int x(int m)
+        "#]]);
+        check_rs_into_c("x: fn(m: *int) -> int", expect![[r#"
+            int x(int *m)
+        "#]]);
+        check_rs_into_c("x: fn(m: *[int]) -> int", expect![[r#"
+            int x(int (*m)[])
+        "#]]);
+        check_rs_into_c("x: fn(m: [*int]) -> int", expect![[r#"
+            int x(int *m[])
+        "#]]);
+        check_rs_into_c("x: fn(m: *[int; 2]) -> int", expect![[r#"
+            int x(int (*m)[2])
+        "#]]);
+        check_rs_into_c("x: fn(m: [*int; 2]) -> int", expect![[r#"
+            int x(int *m[2])
+        "#]]);
+        check_rs_into_c("x: fn(int) -> fn()", expect![[r#"
+            void x(int)()
+        "#]]);
+        check_rs_into_c("x: fn(int) -> fn() -> float", expect![[r#"
+            float x(int)()
+        "#]]);
+        check_rs_into_c("x: fn(int) -> *fn() -> float", expect![[r#"
+            float (*x(int))()
+        "#]]);
+        check_rs_into_c("x: [fn(int)]", expect![[r#"
+            void x[](int)
+        "#]]);
+        check_rs_into_c("x: [*fn(int)]", expect![[r#"
+            void (*x[])(int)
+        "#]]);
+        check_rs_into_c("x: [*fn(int); 2]", expect![[r#"
+            void (*x[2])(int)
+        "#]]);
+        check_rs_into_c("x: fn(int, ...)", expect![[r#"
+            void x(int, ...)
+        "#]]);
+        check_rs_into_c("x: fn(...)", expect![[r#"
+            void x(...)
+        "#]]);
+        check_rs_into_c("x : fn ( m : int SIGN , ... )", expect![[r#"
+            void x(int SIGN m, ...)
+            x: fn(m: int SIGN, ...)
+        "#]]);
+        check_rs_into_c(" : fn ( m : int SIGN , ... )", expect![[r#"
+            (void (int SIGN m, ...))
+            : fn(m: int SIGN, ...)
+        "#]]);
+    }
+
+    #[test]
+    fn c_as_rs() {
+        check_c_into_rs("int x", expect!["x: int"]);
+        check_c_into_rs("int *x", expect!["x: *int"]);
+        check_c_into_rs("int **x", expect!["x: **int"]);
+        check_c_into_rs("int x[]", expect!["x: [int]"]);
+        check_c_into_rs("int *x[]", expect!["x: [*int]"]);
+        check_c_into_rs("int *x[2]", expect!["x: [*int; 2]"]);
+        check_c_into_rs("int (*x)[]", expect!["x: *[int]"]);
+        check_c_into_rs("int (*x)[2]", expect!["x: *[int; 2]"]);
+        check_c_into_rs("int (*x)()", expect!["x: *fn() -> int"]);
+        check_c_into_rs("int *const x", expect!["x: const*int"]);
+        check_c_into_rs("int const *x", expect!["x: *int const"]);
+        check_c_into_rs("int const (*x)[]", expect!["x: *[int const]"]);
+        check_c_into_rs("int const *x[]", expect!["x: [*int const]"]);
+        check_c_into_rs("int (*const x)[]", expect!["x: const*[int]"]);
+        check_c_into_rs("int x(int)", expect!["x: fn(int) -> int"]);
+        check_c_into_rs("int x(int m)", expect!["x: fn(int m) -> int"]);
+        check_c_into_rs("int x(int *m)", expect!["x: fn(m: *int) -> int"]);
+        check_c_into_rs("int x(int m*)", expect!["x: fn(*int m) -> int"]);
+        check_c_into_rs("int x(int m())", expect!["x: fn(m: fn() -> int) -> int"]);
+        check_c_into_rs("int x(int m *())", expect!["x: fn(fn() -> *int m) -> int"]);
+        check_c_into_rs("int x(int *)", expect!["x: fn(*int) -> int"]);
+        check_c_into_rs("int x(int *())", expect!["x: fn(fn() -> *int) -> int"]);
+        check_c_into_rs("int x(int *(int))", expect!["x: fn(fn(int) -> *int) -> int"]);
+        check_c_into_rs("int x(int *(int,int))", expect!["x: fn(fn(int, int) -> *int) -> int"]);
+        check_c_into_rs("int x(int *(int m,int n))", expect!["x: fn(fn(int m, int n) -> *int) -> int"]);
+        check_c_into_rs("int x(int *(int)())", expect!["x: fn(fn(int) -> fn() -> *int) -> int"]);
+        check_c_into_rs("int x(int())", expect!["x: fn(fn() -> int) -> int"]);
+        check_c_into_rs("int long x(int())", expect!["x: fn(fn() -> int) -> int long"]);
+        check_c_into_rs("int x(int long())", expect!["x: fn(fn() -> int long) -> int"]);
+        check_c_into_rs("int x(int (*)())", expect!["x: fn(*fn() -> int) -> int"]);
+        check_c_into_rs("int x(int (*)(int))", expect!["x: fn(*fn(int) -> int) -> int"]);
+        check_c_into_rs("int x(int x)", expect!["x: fn(int x) -> int"]);
+        check_c_into_rs("int x(int *x)", expect!["x: fn(x: *int) -> int"]);
+        check_c_into_rs("int x(int *x())", expect!["x: fn(x: fn() -> *int) -> int"]);
+        check_c_into_rs("int x(int (*x))", expect!["x: fn(x: *int) -> int"]);
+        check_c_into_rs("int x(int (*x)())", expect!["x: fn(x: *fn() -> int) -> int"]);
+        check_c_into_rs("int x(int *(*const x)())", expect!["x: fn(x: const*fn() -> *int) -> int"]);
+        check_c_into_rs("int x(int *(*x)())", expect!["x: fn(x: *fn() -> *int) -> int"]);
+        check_c_into_rs("int x(int *(*(int)))", expect!["x: fn(fn(int) -> **int) -> int"]);
+        check_c_into_rs("int x(int *(int))", expect!["x: fn(fn(int) -> *int) -> int"]);
+        check_c_into_rs("int x(int **(int))", expect!["x: fn(fn(int) -> **int) -> int"]);
+        check_c_into_rs("int x(ty)", expect!["x: fn(ty) -> int"]);
+        check_c_into_rs("int long x(ty)", expect!["x: fn(ty) -> int long"]);
+        check_c_into_rs("int x(ty *)", expect!["x: fn(*ty) -> int"]);
+        check_c_into_rs("int x(ty *())", expect!["x: fn(fn() -> *ty) -> int"]);
+        check_c_into_rs("int x(ty *(ty))", expect!["x: fn(fn(ty) -> *ty) -> int"]);
+        check_c_into_rs("int x(ty *(ty,ty))", expect!["x: fn(fn(ty, ty) -> *ty) -> int"]);
+        check_c_into_rs("int x(ty *(ty m,ty n))", expect!["x: fn(fn(ty m, ty n) -> *ty) -> int"]);
+        check_c_into_rs("int x(ty *(ty)())", expect!["x: fn(fn(ty) -> fn() -> *ty) -> int"]);
+        check_c_into_rs("int x(ty())", expect!["x: fn(fn() -> ty) -> int"]);
+        check_c_into_rs("int x(ty (*)())", expect!["x: fn(*fn() -> ty) -> int"]);
+        check_c_into_rs("int x(ty (*)(ty))", expect!["x: fn(*fn(ty) -> ty) -> int"]);
+        check_c_into_rs("int x(ty x)", expect!["x: fn(ty x) -> int"]);
+        check_c_into_rs("int x(ty *x)", expect!["x: fn(x: *ty) -> int"]);
+        check_c_into_rs("int x(ty *x())", expect!["x: fn(x: fn() -> *ty) -> int"]);
+        check_c_into_rs("int x(ty (*x))", expect!["x: fn(x: *ty) -> int"]);
+        check_c_into_rs("int x(ty (*x)())", expect!["x: fn(x: *fn() -> ty) -> int"]);
+        check_c_into_rs("int x(ty *(*x)())", expect!["x: fn(x: *fn() -> *ty) -> int"]);
+        check_c_into_rs("int x(ty *(*(ty)))", expect!["x: fn(fn(ty) -> **ty) -> int"]);
+        check_c_into_rs("int x(ty *(ty))", expect!["x: fn(fn(ty) -> *ty) -> int"]);
+        check_c_into_rs("int x(ty **(ty))", expect!["x: fn(fn(ty) -> **ty) -> int"]);
+
+        check_c_into_rs("int f()", expect!["f: fn() -> int"]);
+        check_c_into_rs("int (*f)()", expect!["f: *fn() -> int"]);
+        check_c_into_rs("int (*f)(int)", expect!["f: *fn(int) -> int"]);
+        check_c_into_rs("int (*f[2])(int)", expect!["f: [*fn(int) -> int; 2]"]);
+        check_c_into_rs("int (*f(int))(int)", expect!["f: fn(int) -> *fn(int) -> int"]);
+        check_c_into_rs("int (*f(int))[2]", expect!["f: fn(int) -> *[int; 2]"]);
+
+        check_c_into_rs("int f(void)", expect!["f: fn(void) -> int"]);
+        check_c_into_rs("int (*f)(void)", expect!["f: *fn(void) -> int"]);
+        check_c_into_rs("int x(int, ...)", expect!["x: fn(int, ...) -> int"]);
+        check_c_into_rs("int x(...)", expect!["x: fn(...) -> int"]);
+
+        check_c_into_rs("const int *x", expect!["x: *const int"]);
+        check_c_into_rs("int *const *x", expect!["x: *const*int"]);
+        check_c_into_rs("int **const x", expect!["x: const**int"]);
+        check_c_into_rs("int (*const f)(int)", expect!["f: const*fn(int) -> int"]);
+
+        check_c_into_rs("int x[2][3]", expect!["x: [[int; 3]; 2]"]);
+        check_c_into_rs("int (*x)[2][3]", expect!["x: *[[int; 3]; 2]"]);
+        check_c_into_rs("int *x[2][3]", expect!["x: [[*int; 3]; 2]"]);
+
+        check_c_into_rs("int x(int a[2])", expect!["x: fn(a: [int; 2]) -> int"]);
+        check_c_into_rs("int x(int a[])", expect!["x: fn(a: [int]) -> int"]);
+
+        check_c_into_rs("int x(int, int)", expect!["x: fn(int, int) -> int"]);
+        check_c_into_rs("int x(int a, int)", expect!["x: fn(int a, int) -> int"]);
+
+        check_c_into_rs("unsigned long long x", expect!["x: unsigned long long"]);
+        check_c_into_rs("void *x", expect!["x: *void"]);
+        check_c_into_rs("struct S *x", expect!["x: *struct S"]);
+
+        check_c_into_rs("struct S * ( * x ( int m , ... ) )()", expect!["x: fn(int m, ...) -> *fn() -> *struct S"]);
+    }
+
+    #[test]
+    fn c_cast_as_rs() {
+        check_c_into_rs("(int)x", expect!["x: int"]);
+        check_c_into_rs("(int*)x", expect!["x: *int"]);
+        check_c_into_rs("(int())x", expect!["x: fn() -> int"]);
+        check_c_into_rs("(int*())x", expect!["x: fn() -> *int"]);
+        check_c_into_rs("(int(*)())x", expect!["x: *fn() -> int"]);
+        check_c_into_rs("(int x())x", expect!["x: fn() -> int x"]);
+        check_c_into_rs("(int x*())x", expect!["x: fn() -> *int x"]);
+        check_c_into_rs("(int x*())", expect![": fn() -> *int x"]);
+    }
+}

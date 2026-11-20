@@ -1,6 +1,6 @@
 [package]
 name = "cdecl-to-rsdecl"
-version = "0.2.10"
+version = "0.2.11"
 edition = "2021"
 
 authors = ["A4-Tacks <wdsjxhno1001@163.com>"]
@@ -24,3 +24,6 @@ either = "1.15.0"
 getopts-macro = "0.1.5"
 linefeed = "0.6.0"
 peg = "0.8.5"
+
+[dev-dependencies]
+test-buffer = { version = "0.2.0", features = ["expect-test"] }
