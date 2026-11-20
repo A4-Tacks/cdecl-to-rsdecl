@@ -11,7 +11,7 @@ use atty::Stream;
 use cdecl_to_rsdecl::{color, parser, CDecl, RsDecl, COLOR};
 use char_classes as cc;
 use getopts_macro::getopts::Matches;
-use linefeed as lf;
+use rustyline as rl;
 use peg::str::LineCol;
 
 const PROG_NAME: &str = env!("CARGO_BIN_NAME");
@@ -97,25 +97,27 @@ fn main() {
         if atty::is(Stream::Stdout) {
             println!("Welcome to {PROG_NAME}, input `exit` to exit");
         }
-        let lf = lf::Interface::new(PROG_NAME)
-            .expect("Failed to open interactive");
+        let mut rl = rl::DefaultEditor::new().unwrap();
 
-        lf.set_prompt("> ").unwrap();
-        lf.set_history_size(300);
+        let is_exit = |line: &str| {
+            ["exit", "quit"].contains(
+                &line.trim().trim_end_matches(['(', ')', ';']).trim_matches('`'),
+            )
+        };
 
-        while let lf::ReadResult::Input(line) = lf.read_line().unwrap() {
-            if ["exit", "quit"].contains(&line.trim()
-                .trim_end_matches(['(', ')', ';'])
-                .trim_matches('`'))
-            {
-                break;
+        loop {
+            match rl.readline("> ") {
+                Ok(line) if is_exit(&line) => break,
+                Ok(line) => {
+                    if let Err(e) = rl.add_history_entry(line.clone()) {
+                        println!("Can't entry history: {e}")
+                    }
+                    process(&matches, &line)
+                },
+                Err(rustyline::error::ReadlineError::Interrupted) => {},
+                Err(rustyline::error::ReadlineError::Eof) => break,
+                Err(e) => panic!("unhandle error: {e}"),
             }
-
-            if !line.is_empty() {
-                lf.add_history_unique(line.clone());
-            }
-
-            process(&matches, &line);
         }
     } else {
         let buf = &mut String::new();
