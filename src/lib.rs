@@ -786,6 +786,28 @@ mod tests {
         check_c_into_rs("struct S *x", expect!["x: *struct S"]);
 
         check_c_into_rs("struct S * ( * x ( int m , ... ) )()", expect!["x: fn(int m, ...) -> *fn() -> *struct S"]);
+
+        check_c_into_rs("int *x[10]", expect!["x: [*int; 10]"]);
+        check_c_into_rs("int (*x)[10]", expect!["x: *[int; 10]"]);
+        check_c_into_rs("int *f()", expect!["f: fn() -> *int"]);
+        check_c_into_rs("int (*f)()", expect!["f: *fn() -> int"]);
+        check_c_into_rs("int *(*x[5])[10]", expect!["x: [*[*int; 10]; 5]"]);
+        check_c_into_rs("int (*f(int))(int)", expect!["f: fn(int) -> *fn(int) -> int"]);
+        check_c_into_rs("int (*f[3])(int)", expect!["f: [*fn(int) -> int; 3]"]);
+        check_c_into_rs("void (*signal(int, void (*)(int)))(int)", expect!["signal: fn(int, *fn(int)) -> *fn(int)"]);
+        check_c_into_rs("int (*f(int))[10]", expect!["f: fn(int) -> *[int; 10]"]);
+        check_c_into_rs("const int *const *x", expect!["x: *const*const int"]);
+        check_c_into_rs("int *const *x", expect!["x: *const*int"]);
+        check_c_into_rs("int *const x[4]", expect!["x: [const*int; 4]"]);
+        check_c_into_rs("int x(int (*)(int)[10])", expect!["x: fn(*fn(int) -> [int; 10]) -> int"]);
+        check_c_into_rs("int x(int (*(*)(int))(char))", expect!["x: fn(*fn(int) -> *fn(char) -> int) -> int"]);
+        check_c_into_rs("int typedef a", expect!["a: int typedef"]);
+        check_c_into_rs("int (*x)[3][4]", expect!["x: *[[int; 4]; 3]"]);
+        check_c_into_rs("int *x[3][4]", expect!["x: [[*int; 4]; 3]"]);
+        check_c_into_rs("int (*f())[3][4]", expect!["f: fn() -> *[[int; 4]; 3]"]);
+        check_c_into_rs("int f()[10]", expect!["f: fn() -> [int; 10]"]);
+        check_c_into_rs("int f()()", expect!["f: fn() -> fn() -> int"]);
+        check_c_into_rs("int f[3]()", expect!["f: [fn() -> int; 3]"]);
     }
 
     #[test]
