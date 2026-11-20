@@ -3,10 +3,14 @@ Convert some C declaration into Rust style declaration
 Rust style declaration uses prefix specifiers and full parentheses
 to quickly understand deep nested structures
 
-# Not Supported
+> [!NOTE]
+> Rust-style syntax with some difference,
+> e.g c-pointer `int *const` to rs-style is `const*int` instead of `*const int`
+
+# Known Problems
 
 - Due to the inability to retrieve symbols in the context,
-  named parameters for functions are not supported
+  named parameters for functions maybe generate unexpected outputs.
 - It is not recommended to leave spaces before function syntax,
   as ambiguity may lead to strange results
 
